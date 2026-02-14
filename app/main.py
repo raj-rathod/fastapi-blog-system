@@ -1,12 +1,15 @@
 # app.py
 from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from contextlib import asynccontextmanager
 
 from app.utils.database import engine, get_db, Base
 from app.utils.config import settings
+from app.utils.pdf_template import generate_agreement_pdf
+from app.utils.pdf_template import generate_dynamic_signature_pdf
 
 # Configure CORS from .env
 origins = []
@@ -67,4 +70,67 @@ def root():
             "user": settings.DB_USER
         }
     }
+
+@app.get("/download-agreement")
+def download_agreement():
+
+    title = "SERVICE AGREEMENT"
+
+    body = """
+    This Agreement is made between Company A and Company B.
+    The purpose of this agreement is to define the responsibilities
+    and obligations of both parties under mutually agreed terms.
+
+    All services will be provided according to company standards.
+    """
+
+    left_signature = "Authorized Signature\nCompany A"
+
+    right_section = "Client Signature\nCompany B"
+
+    pdf_buffer = generate_agreement_pdf(
+        title=title,
+        body=body,
+        left_signature=left_signature,
+        right_section=right_section
+    )
+
+    return StreamingResponse(
+        pdf_buffer,
+        media_type="application/pdf",
+        headers={"Content-Disposition": "attachment; filename=agreement.pdf"}
+    )
+
+@app.get("/download-agreement_sign")
+def download_agreement_sign():
+
+    title = "SERVICE AGREEMENT"
+
+    body = """
+    This Agreement is made between Company A and Company B.
+    The purpose of this agreement is to define the responsibilities
+    and obligations of both parties under mutually agreed terms.
+
+    All services will be provided according to company standards.
+    """
+
+    left_signature = "Authorized Signature\nCompany A"
+
+    right_section = "Client Signature\nCompany B"
+
+    pdf_buffer = generate_dynamic_signature_pdf(
+        title=title,
+        body=body,
+        p1=left_signature,
+        p2=left_signature,
+        p3=right_section
+    )
+
+    print(pdf_buffer)
+
+    return StreamingResponse(
+        pdf_buffer,
+        media_type="application/pdf",
+        headers={"Content-Disposition": "attachment; filename=agreement.pdf"}
+    )
 
