@@ -8,8 +8,9 @@ from contextlib import asynccontextmanager
 
 from app.utils.database import engine, get_db, Base
 from app.utils.config import settings
-from app.utils.pdf_template import generate_agreement_pdf
+from app.utils.pdf_template import generate_agreement_pdf, generate_email_pdf
 from app.utils.pdf_template import generate_dynamic_signature_pdf
+from app.utils.pdf_template import generateFaxCopy
 
 # Configure CORS from .env
 origins = []
@@ -18,34 +19,12 @@ if settings.CORS_ORIGINS != "*":
 else:
     origins = ["*"]
 
-# Lifespan for startup/shutdown events
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # Startup: Create tables
-    print(f"🚀 Starting {settings.APP_NAME}")
-    print(f"📊 Database: {settings.DB_NAME}@{settings.DB_HOST}")
-    
-    Base.metadata.create_all(bind=engine)
-    
-    # Test connection
-    try:
-        with engine.connect() as conn:
-            db_info = conn.execute(text("SELECT version()")).scalar()
-            print(f"✅ PostgreSQL Connected: {db_info.split(',')[0]}")
-    except Exception as e:
-        print(f"❌ Database connection failed: {e}")
-    
-    yield  # App runs here
-    
-    # Shutdown: Close connections
-    print("👋 Shutting down...")
-    engine.dispose()
+
 
 # Create FastAPI app with settings from .env
 app = FastAPI(
     title=settings.APP_NAME,
     debug=settings.DEBUG,
-    lifespan=lifespan,
 )
 
 # Add CORS middleware
@@ -57,32 +36,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Health check with database
-@app.get("/")
-def root():
-    return {
-        "app": settings.APP_NAME,
-        "version": "1.0",
-        "debug": settings.DEBUG,
-        "database": {
-            "host": settings.DB_HOST,
-            "name": settings.DB_NAME,
-            "user": settings.DB_USER
-        }
-    }
 
 @app.get("/download-agreement")
 def download_agreement():
 
     title = "SERVICE AGREEMENT"
 
-    body = """
-    This Agreement is made between Company A and Company B.
-    The purpose of this agreement is to define the responsibilities
-    and obligations of both parties under mutually agreed terms.
+    body = "<b>LEGAL AGREEMENT</b><br/><br/>This Legal Agreement (\"Agreement\") is made and entered into between the concerned parties for defining the terms and conditions governing their professional relationship.<br/><br/>1. <b>Scope of Services</b><br/>The Service Provider agrees to perform services with due diligence, professional care, and in compliance with all applicable laws and regulations.<br/><br/>2. <b>Payment Terms</b><br/>The Client agrees to compensate the Service Provider as per the mutually agreed commercial terms. Payments shall be made within the stipulated timeframe as outlined in the invoice or agreement schedule.<br/><br/>3. <b>Confidentiality</b><br/>Both parties agree to maintain strict confidentiality of all proprietary, financial, and business information exchanged during the course of this Agreement. Such information shall not be disclosed without prior written consent.<br/><br/>4. <b>Term and Termination</b><br/>This Agreement shall remain in effect unless terminated by either party with prior written notice. Termination shall not affect any obligations accrued before the termination date.<br/><br/>5. <b>Limitation of Liability</b><br/>Under no circumstances shall either party be liable for indirect, incidental, or consequential damages arising out of this Agreement.<br/><br/>6. <b>Governing Law</b><br/>This Agreement shall be governed and construed in accordance with the applicable laws of the relevant jurisdiction.<br/><br/>By signing below, both parties acknowledge that they have read, understood, and agreed to the terms and conditions stated herein.<br/><br/>Authorized Signatory<br/>__________________________<br/><br/>Client Signature<br/>__________________________"
 
-    All services will be provided according to company standards.
-    """
 
     left_signature = "Authorized Signature\nCompany A"
 
@@ -106,19 +67,14 @@ def download_agreement_sign():
 
     title = "SERVICE AGREEMENT"
 
-    body = """
-    This Agreement is made between Company A and Company B.
-    The purpose of this agreement is to define the responsibilities
-    and obligations of both parties under mutually agreed terms.
+    body = "<b>LEGAL AGREEMENT</b><br/><br/>This Legal Agreement (\"Agreement\") is made and entered into between the concerned parties for defining the terms and conditions governing their professional relationship.<br/><br/>1. <b>Scope of Services</b><br/>The Service Provider agrees to perform services with due diligence, professional care, and in compliance with all applicable laws and regulations.<br/><br/>2. <b>Payment Terms</b><br/>The Client agrees to compensate the Service Provider as per the mutually agreed commercial terms. Payments shall be made within the stipulated timeframe as outlined in the invoice or agreement schedule.<br/><br/>3. <b>Confidentiality</b><br/>Both parties agree to maintain strict confidentiality of all proprietary, financial, and business information exchanged during the course of this Agreement. Such information shall not be disclosed without prior written consent.<br/><br/>4. <b>Term and Termination</b><br/>This Agreement shall remain in effect unless terminated by either party with prior written notice. Termination shall not affect any obligations accrued before the termination date.<br/><br/>5. <b>Limitation of Liability</b><br/>Under no circumstances shall either party be liable for indirect, incidental, or consequential damages arising out of this Agreement.<br/><br/>6. <b>Governing Law</b><br/>This Agreement shall be governed and construed in accordance with the applicable laws of the relevant jurisdiction.<br/><br/>By signing below, both parties acknowledge that they have read, understood, and agreed to the terms and conditions stated herein.<br/><br/>Authorized Signatory<br/>__________________________<br/><br/>Client Signature<br/>__________________________"
 
-    All services will be provided according to company standards.
-    """
 
     left_signature = "Authorized Signature\nCompany A"
 
     right_section = "Client Signature\nCompany B"
 
-    pdf_buffer = generate_dynamic_signature_pdf(
+    pdf_buffer = generate_agreement_pdf(
         title=title,
         body=body,
         p1=left_signature,
@@ -126,11 +82,31 @@ def download_agreement_sign():
         p3=right_section
     )
 
-    print(pdf_buffer)
-
     return StreamingResponse(
         pdf_buffer,
         media_type="application/pdf",
         headers={"Content-Disposition": "attachment; filename=agreement.pdf"}
+    )
+
+@app.get("/download-fax_copy")
+def download_fax_copy():
+
+    pdf_buffer = generateFaxCopy()
+
+    return StreamingResponse(
+        pdf_buffer,
+        media_type="application/pdf",
+        headers={"Content-Disposition": "attachment; filename=agreement_fax.pdf"}
+    )
+
+@app.get("/download-email_copy")
+def download_emailcopy():
+
+    pdf_buffer = generate_email_pdf()
+
+    return StreamingResponse(
+        pdf_buffer,
+        media_type="application/pdf",
+        headers={"Content-Disposition": "attachment; filename=agreement_fax.pdf"}
     )
 

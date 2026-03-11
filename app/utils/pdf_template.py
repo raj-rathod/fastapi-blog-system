@@ -9,20 +9,20 @@ from reportlab.platypus import (
     Spacer,
     Image,
     Table,
-    HRFlowable
+    HRFlowable,
+    TableStyle
 )
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import inch
-from reportlab.lib.enums import TA_CENTER
+from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfgen import canvas as rl_canvas
 
 
-
-def generate_agreement_pdf(title: str, body: str, left_signature: str, right_section: str):
+def generate_agreement_pdf(title: str, body: str, p1: str, p2: str, p3: str):
 
     buffer = BytesIO()
 
@@ -31,27 +31,24 @@ def generate_agreement_pdf(title: str, body: str, left_signature: str, right_sec
         pagesize=A4,
         rightMargin=40,
         leftMargin=40,
-        topMargin=40,
-        bottomMargin=40
+        topMargin=50,
+        bottomMargin=60
     )
 
     elements = []
-    width, height = A4
-
     styles = getSampleStyleSheet()
 
     # =========================
-    # Custom Styles
+    # Styles
     # =========================
     title_style = ParagraphStyle(
         name="TitleStyle",
         parent=styles["Normal"],
         fontSize=16,
         leading=20,
-        alignment=1,  # Center
-        spaceAfter=20,
-        spaceBefore=10,
-        fontName="Helvetica-Bold"
+        alignment=TA_CENTER,
+        fontName="Helvetica-Bold",
+        spaceAfter=20
     )
 
     body_style = ParagraphStyle(
@@ -59,7 +56,14 @@ def generate_agreement_pdf(title: str, body: str, left_signature: str, right_sec
         parent=styles["Normal"],
         fontSize=11,
         leading=16,
-        alignment=0,
+        alignment=TA_LEFT
+    )
+
+    date_style = ParagraphStyle(
+        name="DateStyle",
+        parent=styles["Normal"],
+        fontSize=10,
+        alignment=TA_RIGHT
     )
 
     signature_style = ParagraphStyle(
@@ -67,25 +71,19 @@ def generate_agreement_pdf(title: str, body: str, left_signature: str, right_sec
         parent=styles["Normal"],
         fontSize=10,
         leading=14,
-        alignment=0,
-    )
-
-    right_style = ParagraphStyle(
-        name="RightStyle",
-        parent=styles["Normal"],
-        fontSize=10,
-        leading=14,
-        alignment=1,  # Center text under line
+        alignment=TA_CENTER
     )
 
     # =========================
-    # Logo (Absolute Safe Path)
+    # Top Logo
     # =========================
     BASE_DIR = Path(__file__).resolve().parent.parent
     logo_path = BASE_DIR / "static" / "logo.png"
 
     if logo_path.exists():
-        logo = Image(str(logo_path), width=2 * inch, height=1 * inch)
+        logo = Image(str(logo_path))
+        logo.drawHeight = 0.8 * inch
+        logo.drawWidth = logo.drawHeight * logo.imageWidth / logo.imageHeight
         logo.hAlign = "LEFT"
         elements.append(logo)
 
@@ -94,67 +92,101 @@ def generate_agreement_pdf(title: str, body: str, left_signature: str, right_sec
     # =========================
     # Date (Top Right)
     # =========================
-    current_date = datetime.now().strftime("%d %B %Y")
-
-    date_style = ParagraphStyle(
-        name="DateStyle",
-        parent=styles["Normal"],
-        fontSize=10,
-        alignment=2  # Right
-    )
-
+    current_date = datetime.now().strftime("%d/%m/%Y")
     elements.append(Paragraph(current_date, date_style))
     elements.append(Spacer(1, 20))
 
     # =========================
-    # Title (Center Bold)
+    # Title
     # =========================
     elements.append(Paragraph(title, title_style))
     elements.append(Spacer(1, 20))
 
     # =========================
-    # Body (Dynamic)
+    # Body
     # =========================
     elements.append(Paragraph(body, body_style))
-    elements.append(Spacer(1, 40))
 
-    # =========================
-    # Bottom Signature Layout
-    # =========================
-    def draw_bottom_section(canvas, doc):
-        canvas.saveState()
+    # ====================================================
+    # Bottom Signature Section (Last Page Only)
+    # ====================================================
 
-        page_width, page_height = A4
-        y_position = 80  # distance from bottom
+    # Logo under p1 only
+    if logo_path.exists():
+        sign_logo = Image(str(logo_path))
+        sign_logo.drawHeight = 0.6 * inch
+        sign_logo.drawWidth = sign_logo.drawHeight * sign_logo.imageWidth / sign_logo.imageHeight
+    else:
+        sign_logo = Spacer(1, 20)
 
-        # LEFT SIGNATURE
-        canvas.line(40, y_position + 20, 240, y_position + 20)  # 200px width line
-        text_left = canvas.beginText(40, y_position)
-        text_left.setFont("Helvetica", 10)
-        text_left.textLines(left_signature)
-        canvas.drawText(text_left)
+    # Left block (p1 + logo)
+    left_block = Table([
+        [Paragraph(p1, signature_style)],
+        [sign_logo]
+    ])
+    left_block.setStyle([
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('VALIGN', (0, 0), (-1, -1), 'TOP')
+    ])
 
-        # RIGHT SECTION
-        right_x_start = page_width - 240
-        canvas.line(right_x_start, y_position + 20, right_x_start + 200, y_position + 20)
+    # Middle block (p2)
+    middle_block = Paragraph(p2, signature_style) if p2 else Spacer(1, 20)
 
-        text_right = canvas.beginText(right_x_start, y_position)
-        text_right.setFont("Helvetica", 10)
+    # Right block (p3 bottom aligned)
+    right_block = Table([
+        [''],
+        [Paragraph(p3, signature_style)]
+    ], rowHeights=[30, None])
 
-        # Center text manually
-        lines = right_section.split("\n")
-        for line in lines:
-            text_width = canvas.stringWidth(line, "Helvetica", 10)
-            centered_x = right_x_start + (200 - text_width) / 2
-            canvas.drawString(centered_x, y_position, line)
-            y_position -= 14
+    right_block.setStyle([
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('VALIGN', (0, 1), (-1, 1), 'BOTTOM')
+    ])
 
-        canvas.restoreState()
+    # Final horizontal signature table
+    signatureTable = Table(
+        [[left_block, middle_block, right_block]],
+        colWidths=[180, 180, 180]
+    )
 
-    # =========================
-    # Build PDF
-    # =========================
-    doc.build(elements, onFirstPage=draw_bottom_section)
+    signatureTable.setStyle([
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('LEFTPADDING', (0, 0), (-1, -1), 5),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 5),
+    ])
+
+    # ====================================================
+    # Custom Canvas (Signature Only On Last Page)
+    # ====================================================
+    class SignatureCanvas(rl_canvas.Canvas):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.pages = []
+
+        def showPage(self):
+            self.pages.append(dict(self.__dict__))
+            self._startPage()
+
+        def save(self):
+            total_pages = len(self.pages)
+
+            for page_number, page in enumerate(self.pages, start=1):
+                self.__dict__.update(page)
+
+                if page_number == total_pages:
+                    w, h = signatureTable.wrap(doc.width, doc.bottomMargin)
+                    signatureTable.drawOn(
+                        self,
+                        doc.leftMargin,
+                        doc.bottomMargin - h + 30
+                    )
+
+                super().showPage()
+
+            super().save()
+
+    doc.build(elements, canvasmaker=SignatureCanvas)
 
     buffer.seek(0)
     return buffer
@@ -168,8 +200,8 @@ def generate_dynamic_signature_pdf(title: str, body: str, p1: str, p2: str, p3: 
         pagesize=A4,
         rightMargin=40,
         leftMargin=40,
-        topMargin=60,
-        bottomMargin=60
+        topMargin=50,
+        bottomMargin=50
     )
 
     elements = []
@@ -268,7 +300,7 @@ def generate_dynamic_signature_pdf(title: str, body: str, p1: str, p2: str, p3: 
 
     signatureTable = Table([[left_group, right_group]], colWidths=[350, 180])
     signatureTable.setStyle([
-        ('ALIGN', (1, 0), (1, 0), 'RIGHT'),
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
         ('VALIGN', (0, 0), (-1, -1), 'TOP')
     ])
 
@@ -304,6 +336,257 @@ def generate_dynamic_signature_pdf(title: str, body: str, p1: str, p2: str, p3: 
 
     # Build document
     doc.build(elements, canvasmaker=SignatureCanvas)
+
+    buffer.seek(0)
+    return buffer
+
+def generateFaxCopy(): 
+    buffer = BytesIO()
+
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        rightMargin=40,
+        leftMargin=40,
+        topMargin=40,
+        bottomMargin=40
+    )
+
+    elements = []
+    styles = getSampleStyleSheet()
+
+    normal = styles["Normal"]
+
+    # =========================
+    # HEADER BOX
+    # =========================
+    header_data = [
+        [
+            Paragraph("<b>Fax Call Report</b>", normal),
+            Paragraph("<b>HP Laser Jet color MFP M283fdw</b><br/>Page 1", 
+                      ParagraphStyle(
+                          name="RightHeader",
+                          parent=normal,
+                          alignment=TA_RIGHT
+                      ))
+        ]
+    ]
+
+    header_table = Table(header_data, colWidths=[300, 200])
+    header_table.setStyle(TableStyle([
+        ('BOX', (0, 0), (-1, -1), 1, colors.black),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('LEFTPADDING', (0, 0), (-1, -1), 8),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 8),
+        ('TOPPADDING', (0, 0), (-1, -1), 6),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+    ]))
+
+    elements.append(header_table)
+    elements.append(Spacer(1, 20))
+
+    # =========================
+    # Fax Header Info
+    # =========================
+    elements.append(Paragraph("Fax Header", normal))
+    elements.append(Paragraph("Information BASF", normal))
+    elements.append(Paragraph("03 2241 1511", normal))
+    elements.append(Spacer(1, 25))
+
+    # =========================
+    # Report Table
+    # =========================
+    table_data = [
+        ["Job", "Date", "Type", "Line", "Identification", "Duration", "Pages", "Result"],
+        ["2316", "", "Send", "Analog", "", "0:30", "1", "Successful"]
+    ]
+
+    report_table = Table(table_data, colWidths=[60, 70, 70, 70, 110, 70, 50, 90])
+
+    report_table.setStyle(TableStyle([
+        ('LINEBELOW', (0, 0), (-1, 0), 1, colors.black),
+        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+        ('TOPPADDING', (0, 0), (-1, -1), 6),
+    ]))
+
+    elements.append(report_table)
+
+    elements.append(Spacer(1, 350))
+
+    # =========================
+    # Footer
+    # =========================
+    footer_table = Table([
+        [
+            Paragraph("Internal", normal),
+            Paragraph("English (United States)", 
+                      ParagraphStyle(
+                          name="RightFooter",
+                          parent=normal,
+                          alignment=TA_RIGHT
+                      ))
+        ]
+    ], colWidths=[300, 200])
+
+    elements.append(footer_table)
+
+    # Build
+    doc.build(elements)
+
+    buffer.seek(0)
+
+    return buffer
+
+def generate_email_pdf():
+    buffer = BytesIO()
+
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        rightMargin=40,
+        leftMargin=40,
+        topMargin=50,
+        bottomMargin=50
+    )
+
+    elements = []
+    styles = getSampleStyleSheet()
+
+    normal = styles["Normal"]
+
+    small_style = ParagraphStyle(
+        name="Small",
+        parent=normal,
+        fontSize=10,
+        leading=14,
+        alignment=TA_LEFT
+    )
+
+    bold_style = ParagraphStyle(
+        name="Bold",
+        parent=normal,
+        fontSize=10,
+        leading=14
+    )
+
+    # =========================
+    # Header Table (From / To / etc.)
+    # =========================
+
+    header_data = [
+        ["From:", "APTIC_LC_CHECK@basf.com"],
+        ["To:", ""],
+        ["Subject:", ""],
+        ["Date:", datetime.now().strftime("%d/%m/%Y")],
+        ["Attachments:", "DOCS.pdf"],
+    ]
+
+    header_table = Table(header_data, colWidths=[100, 350])
+    header_table.setStyle(TableStyle([
+        ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
+        ('FONTSIZE', (0, 0), (-1, -1), 10),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+    ]))
+
+    elements.append(header_table)
+    elements.append(Spacer(1, 10))
+
+    # =========================
+    # Horizontal Line
+    # =========================
+
+    elements.append(HRFlowable(width="100%", thickness=2, color=colors.black))
+    elements.append(Spacer(1, 20))
+
+    # =========================
+    # Body
+    # =========================
+
+    elements.append(Paragraph("To:", small_style))
+    elements.append(Spacer(1, 15))
+
+    body_text = """
+    Enclose documents pertaining as per above subject details for your kind reference.
+    """
+
+    elements.append(Paragraph(body_text, small_style))
+    elements.append(Spacer(1, 200))  # push content downward
+
+    # =========================
+    # Closing Section
+    # =========================
+
+    closing_text = """
+    Thank You,<br/><br/>
+    Regards,<br/>
+    BASF Hong Kong Ltd.<br/>
+    36/F, Two Taikoo Place, Taikoo Place,<br/>
+    979 King's Road, Quarry Bay, Hong Kong.
+    """
+
+    elements.append(Paragraph(closing_text, small_style))
+    elements.append(Spacer(1, 20))
+
+    # =========================
+    # Logo (Auto Size - No Stretch)
+    # =========================
+
+    BASE_DIR = Path(__file__).resolve().parent.parent
+    logo_path = BASE_DIR / "static" / "logo.png"
+
+    if logo_path.exists():
+        logo = Image(str(logo_path))
+        logo._restrictSize(2.5 * inch, 1.2 * inch)  # keeps aspect ratio
+        elements.append(logo)
+
+    elements.append(Spacer(1, 40))
+
+    # =========================
+    # Bottom Right Signature Line
+    # =========================
+
+    sign_line = Table(
+        [[""]],
+        colWidths=[200],
+        rowHeights=[1]
+    )
+
+    sign_line.setStyle(TableStyle([
+        ('LINEABOVE', (0, 0), (-1, -1), 1, colors.black),
+    ]))
+
+    right_align_table = Table(
+        [[sign_line]],
+        colWidths=[doc.width]
+    )
+
+    right_align_table.setStyle(TableStyle([
+        ('ALIGN', (0, 0), (-1, -1), 'RIGHT'),
+    ]))
+
+    elements.append(right_align_table)
+    elements.append(Spacer(1, 5))
+
+    elements.append(
+        Paragraph(
+            "for BASF HONG KONG LTD.",
+            ParagraphStyle(
+                name="RightSmall",
+                parent=small_style,
+                alignment=2
+            )
+        )
+    )
+
+    # =========================
+    # Build PDF with Footer
+    # =========================
+
+    doc.build(
+        elements
+    )
 
     buffer.seek(0)
     return buffer
